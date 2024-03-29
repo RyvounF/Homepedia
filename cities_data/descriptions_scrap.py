@@ -25,7 +25,7 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
         city_code = row[0]
         user_agent = UserAgent().random
         headers = {'User-Agent': user_agent}
-        response = requests.get(f'https://www.villesavivre.fr/{city_code}', headers=headers)
+        response = requests.get(f'{url}/{city_code}', headers=headers)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             city_element = soup.find('div', {'class': 'header-content'})
@@ -49,7 +49,7 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
                     years_range = population_elements[1].find('div', {'class': 'demo-flex'}).find_all('p')[1].text.strip()
                     years_range_value = float(population_elements[1].find('div', {'class': 'demo-flex'}).find_all('p')[0].text.replace('%','').replace(',', '.').strip())
                     residents_km = population_elements[2].find_all('p')[1].text.strip()
-                    residents_km_value = int(population_elements[2].find_all('p')[0].text.replace(' ', '').strip())
+                    residents_km_value = int(population_elements[2].find_all('p')[0].text.replace(' ', '').replace('\u202f','').strip())
                     median_age = population_elements[3].find('div', {'class': 'demo-flex'}).find_all('p')[1].text.strip()
                     median_age_value = population_elements[3].find('div', {'class': 'demo-flex'}).find_all('p')[0].text.strip()
                 if len(population_graphs) >= 2:
@@ -113,6 +113,34 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
                     fibre_value = economy_elements[2].find('div', {'class': 'text-content'}).find('p').text.strip()
                     entreprises_title = economy_elements[3].find('p', {'class': 'p-content'}).text.strip()
                     entreprises_value = economy_elements[3].find('div', {'class': 'text-content'}).find('p').text.strip()
+                # Estate
+                estate = soup.find('section',{'id':'immobilier'})
+                estate_title = estate.find('h2').text.strip()
+                estate_description = estate.find('div',{'class':'dynamic-content'}).text.strip()
+                estate_price = estate.find_all('div',{'class':'card-content'})
+                # Price apartment
+                median_price_m2_apartment = estate_price[0].find('div', {'class': 'text-content'}).find('p').text.replace('€', '').replace(',', '.').strip()
+                median_price_m2_apartment_value = median_price_m2_apartment.replace(' ', '')
+                price_apartment = median_price_m2_apartment_value.split('+', 1)
+                price_apartment_value = int(price_apartment[0].replace('\u202f', '').replace('-', '')) if price_apartment and price_apartment[0] and price_apartment[0] != '-' else None
+                percentage_apartment_change = price_apartment[1] if len(price_apartment) > 1 else ""
+                if percentage_apartment_change:
+                    percentage_apartment_parts = percentage_apartment_change.split('-', 1)
+                    percentage_apartment_value = float(percentage_apartment_parts[0].replace('%', ''))
+                median_price_description_m2_apartment = estate_price[0].find('p',{'class':'p-content'}).text.strip()
+                # Price mansion
+                median_price_m2_mansion = estate_price[1].find('div', {'class': 'text-content'}).find('p').text.replace('€', '').replace(',', '.').strip()
+                median_price_m2_mansion_value = median_price_m2_mansion.replace(' ', '')
+                price_mansion = median_price_m2_mansion_value.split('-', 1)
+                price_mansion_value = int(price_mansion[0].replace('\u202f', '').replace('-', '').replace('\n\n','')) if price_mansion and price_mansion[0] and price_mansion[0] != '-' else None
+                percentage_mansion_change = price_mansion[0] if len(price_mansion) > 1 else ""
+                if percentage_mansion_change:
+                    percentage_mansion_parts = percentage_mansion_change.split('+', 1)
+                    percentage_mansion_value = float(percentage_mansion_parts[0].replace('%', '').replace('\u202f', '').replace('\n\n',''))
+                median_price_description_m2_mansion = estate_price[1].find('p',{'class':'p-content'}).text.strip()
+                print(percentage_mansion_value)
+                print(price_mansion_value)
+
 
                 city_data = {
                     'description': {
@@ -187,8 +215,11 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
                             'entreprises_value': entreprises_value
                         },
                         'estate': {
-                            'estate_title': None,
-                            'median_price_m2_apartment': None,
+                            'estate_title': estate_title,
+                            'estate_description': estate_description,
+                            'median_price_m2_apartment': price_apartment_value,
+                            'median_percentage_m2_apartment': percentage_apartment_value,
+                            'median_price_description_m2_apartment': median_price_description_m2_apartment,
                             'median_price_m2_mansion': None,
                             'habitat_type_apartment': None,
                             'habitat_type_apartment_value': None,
@@ -343,10 +374,10 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
             print(f"Failed to fetch data for {city_code}: {response.status_code}")
     return last_row_processed, total_requests
 
-
+# DB Connect
 client = MongoClient('mongodb+srv://admin:Agudib24@citydata.1uvq9yv.mongodb.net/')
-db = client['Cities']  # Создание или подключение к базе данных
-collection = db['test']  # Создание или подключение к коллекции
+db = client['Cities']
+collection = db['test']
 
 with open('cities_data_cleaned.csv', 'r', encoding='utf-8') as csvfile:
     reader = csv.reader(csvfile)
