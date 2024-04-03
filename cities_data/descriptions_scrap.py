@@ -26,6 +26,8 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
         user_agent = UserAgent().random
         headers = {'User-Agent': user_agent}
         response = requests.get(f'{url}/{city_code}', headers=headers)
+        driver.implicitly_wait(15)
+        time.sleep(3)
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             city_element = soup.find('div', {'class': 'header-content'})
@@ -118,28 +120,57 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
                 estate_title = estate.find('h2').text.strip()
                 estate_description = estate.find('div',{'class':'dynamic-content'}).text.strip()
                 estate_price = estate.find_all('div',{'class':'card-content'})
+                estate_info = estate.find_all('div',{'class':'graph-content'})
                 # Price apartment
                 median_price_m2_apartment = estate_price[0].find('div', {'class': 'text-content'}).find('p').text.replace('€', '').replace(',', '.').strip()
                 median_price_m2_apartment_value = median_price_m2_apartment.replace(' ', '')
-                price_apartment = median_price_m2_apartment_value.split('+', 1)
-                price_apartment_value = int(price_apartment[0].replace('\u202f', '').replace('-', '')) if price_apartment and price_apartment[0] and price_apartment[0] != '-' else None
+                price_apartment = re.findall(r'[-+]?\d[\d\s]*(?:\.\d+)?%?', median_price_m2_apartment_value)
+                price_apartment_value = int(price_apartment[0].replace('\u202f', '').replace('-', '').replace('\n', '')) if price_apartment and price_apartment[0] and price_apartment[0] != '-' else None
                 percentage_apartment_change = price_apartment[1] if len(price_apartment) > 1 else ""
+                percentage_apartment_value = None
                 if percentage_apartment_change:
                     percentage_apartment_parts = percentage_apartment_change.split('-', 1)
-                    percentage_apartment_value = float(percentage_apartment_parts[0].replace('%', ''))
+                    if percentage_apartment_parts and percentage_apartment_parts[0]:
+                        percentage_apartment_value = float(percentage_apartment_parts[0].replace('%', '').replace('\u202f', '').replace('\n\n', ''))
                 median_price_description_m2_apartment = estate_price[0].find('p',{'class':'p-content'}).text.strip()
                 # Price mansion
                 median_price_m2_mansion = estate_price[1].find('div', {'class': 'text-content'}).find('p').text.replace('€', '').replace(',', '.').strip()
                 median_price_m2_mansion_value = median_price_m2_mansion.replace(' ', '')
-                price_mansion = median_price_m2_mansion_value.split('-', 1)
+                price_mansion = re.findall(r'[-+]?\d[\d\s]*(?:\.\d+)?%?', median_price_m2_mansion_value)
                 price_mansion_value = int(price_mansion[0].replace('\u202f', '').replace('-', '').replace('\n\n','')) if price_mansion and price_mansion[0] and price_mansion[0] != '-' else None
-                percentage_mansion_change = price_mansion[0] if len(price_mansion) > 1 else ""
+                percentage_mansion_change = price_mansion[1] if len(price_mansion) > 1 else ""
+                percentage_mansion_value = None
                 if percentage_mansion_change:
                     percentage_mansion_parts = percentage_mansion_change.split('+', 1)
-                    percentage_mansion_value = float(percentage_mansion_parts[0].replace('%', '').replace('\u202f', '').replace('\n\n',''))
+                    if percentage_mansion_parts and percentage_mansion_parts[0]:
+                        percentage_mansion_value = float(
+                            percentage_mansion_parts[0].replace('%', '').replace('\u202f', '').replace('\n\n', ''))
                 median_price_description_m2_mansion = estate_price[1].find('p',{'class':'p-content'}).text.strip()
-                print(percentage_mansion_value)
-                print(price_mansion_value)
+                # Graphs for Habitat types
+                habitat_type = estate_info[0].find('div', {'class': 'pie-chart'})
+                habitat_type_title = habitat_type.find('h4').text.strip()
+                habitat_type1 = habitat_type.find('div', {'class': 'flex-wrapper'})
+                habitat_type2 = habitat_type1.find('div', {'class': 'single-chart'})
+                habitat_type3 = habitat_type2.find('svg', {'class': 'circular-chart'})
+                # High value
+                habitat_type_high_title = habitat_type3.find('text', {'class': 'name'}).text.strip()
+                habitat_type_high = habitat_type3.find('text', {'class': 'text-one'})
+                if habitat_type_high:
+                    habitat_type_high_value = float(habitat_type_high.text.replace('%', '').replace(' ','').replace(',','.').strip())
+                else:
+                    habitat_type_high_value = None
+                # Low value
+                habitat_type_low = habitat_type.find('div', {'class': 'second-circle-content'}).find('p').text.replace(' ','').replace(',', '.').strip()
+                parts = habitat_type_low.split('%')
+
+                if habitat_type_low:
+                    habitat_type_low_value = float(parts[0].strip())
+                    habitat_type_low_title = parts[1].strip()
+                else:
+                    habitat_type_low_value = None
+                    habitat_type_low_title = None
+
+                print(habitat_type_low_value,habitat_type_low_title, city_code)
 
 
                 city_data = {
@@ -220,11 +251,14 @@ def scrape_data(reader, collection, total_requests, last_row_processed):
                             'median_price_m2_apartment': price_apartment_value,
                             'median_percentage_m2_apartment': percentage_apartment_value,
                             'median_price_description_m2_apartment': median_price_description_m2_apartment,
-                            'median_price_m2_mansion': None,
-                            'habitat_type_apartment': None,
-                            'habitat_type_apartment_value': None,
-                            'habitat_type_mansion': None,
-                            'habitat_type_mansion_value': None,
+                            'median_price_m2_mansion': price_mansion_value,
+                            'median_percentage_m2_mansion': percentage_mansion_value,
+                            'median_price_description_m2_mansion': median_price_description_m2_mansion,
+                            'habitat_type_title': habitat_type_title,
+                            'habitat_type_high_value': habitat_type_high_value,
+                            'habitat_type_high_title': habitat_type_high_title,
+                            'habitat_type_low_value': habitat_type_low_value,
+                            'habitat_type_low_title': habitat_type_low_title,
                             'estate_use': {
                                 'vacant_housing': None,
                                 'main_residences': None,
